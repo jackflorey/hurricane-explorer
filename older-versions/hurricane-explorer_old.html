@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hurricane Data Explorer - HURDAT2</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0f; color: #e0e0e0; height: 100vh; overflow: hidden; }
+    .app { display: flex; height: 100vh; }
+    .sidebar { width: 380px; background: #12121a; border-right: 1px solid #2a2a3a; display: flex; flex-direction: column; }
+    .header { padding: 20px; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border-bottom: 1px solid #2a2a3a; }
+    .header h1 { font-size: 1.4rem; color: #fff; margin-bottom: 4px; }
+    .header p { font-size: 0.75rem; color: #888; }
+    .tabs { display: flex; background: #0f0f15; border-bottom: 1px solid #2a2a3a; }
+    .tab { flex: 1; padding: 12px; text-align: center; cursor: pointer; font-size: 0.85rem; color: #888; border-bottom: 2px solid transparent; }
+    .tab:hover { color: #aaa; background: #151520; }
+    .tab.active { color: #4fc3f7; border-bottom-color: #4fc3f7; background: #151520; }
+    .content { flex: 1; overflow-y: auto; padding: 16px; }
+    .search input { width: 100%; padding: 12px 16px; background: #1a1a25; border: 1px solid #2a2a3a; border-radius: 8px; color: #fff; font-size: 0.9rem; margin-bottom: 16px; }
+    .search input:focus { outline: none; border-color: #4fc3f7; }
+    .filters { display: flex; gap: 8px; margin-bottom: 16px; }
+    .filters select { flex: 1; padding: 10px; background: #1a1a25; border: 1px solid #2a2a3a; border-radius: 6px; color: #fff; font-size: 0.85rem; }
+    .basin-toggle { display: flex; gap: 8px; margin-bottom: 16px; }
+    .basin-btn { flex: 1; padding: 10px; background: #1a1a25; border: 1px solid #2a2a3a; border-radius: 6px; color: #888; font-size: 0.85rem; cursor: pointer; }
+    .basin-btn.active { background: #1a2a3a; border-color: #4fc3f7; color: #4fc3f7; }
+    .storm-list { display: flex; flex-direction: column; gap: 8px; }
+    .storm-item { padding: 12px; background: #1a1a25; border: 1px solid #2a2a3a; border-radius: 8px; cursor: pointer; }
+    .storm-item:hover { background: #222230; border-color: #3a3a4a; }
+    .storm-item.selected { background: #1a2a3a; border-color: #4fc3f7; }
+    .storm-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .storm-name { font-weight: 600; color: #fff; }
+    .storm-cat { padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+    .cat-td { background: #2d5a27; color: #8bc34a; }
+    .cat-ts { background: #5a5a27; color: #ffeb3b; }
+    .cat-1 { background: #5a4527; color: #ffc107; }
+    .cat-2 { background: #5a3527; color: #ff9800; }
+    .cat-3 { background: #5a2527; color: #ff5722; }
+    .cat-4 { background: #5a1527; color: #f44336; }
+    .cat-5 { background: #5a0527; color: #e91e63; }
+    .storm-meta { font-size: 0.8rem; color: #888; }
+    .selected-panel { margin-bottom: 16px; padding: 12px; background: #151520; border-radius: 8px; display: none; }
+    .selected-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .selected-header span { font-size: 0.85rem; color: #888; }
+    .clear-btn { padding: 4px 10px; background: #3a2a2a; border: none; border-radius: 4px; color: #f77; font-size: 0.75rem; cursor: pointer; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip { display: flex; align-items: center; gap: 6px; padding: 4px 10px; background: #1a2a3a; border-radius: 20px; font-size: 0.8rem; }
+    .chip-x { cursor: pointer; color: #f77; }
+    .btn { width: 100%; padding: 12px; background: linear-gradient(135deg, #1976d2, #1565c0); border: none; border-radius: 8px; color: #fff; font-size: 0.9rem; font-weight: 600; cursor: pointer; margin-top: 12px; }
+    .btn:hover { background: linear-gradient(135deg, #1e88e5, #1976d2); }
+    .btn-green { background: linear-gradient(135deg, #388e3c, #2e7d32); }
+    .map-area { flex: 1; position: relative; }
+    #map { width: 100%; height: 100%; background: #0a1929; }
+    .legend { position: absolute; bottom: 30px; right: 10px; background: rgba(18,18,26,0.95); padding: 12px 16px; border-radius: 8px; border: 1px solid #2a2a3a; z-index: 1000; font-size: 0.8rem; }
+    .legend-title { font-weight: 600; margin-bottom: 8px; color: #fff; }
+    .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .legend-color { width: 24px; height: 4px; border-radius: 2px; }
+    .legend-label { color: #aaa; }
+    .stats { position: absolute; top: 10px; right: 10px; background: rgba(18,18,26,0.95); padding: 16px; border-radius: 8px; border: 1px solid #2a2a3a; z-index: 1000; min-width: 280px; display: none; }
+    .stats h3 { font-size: 1rem; margin-bottom: 12px; color: #fff; }
+    .stat-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #2a2a3a; font-size: 0.85rem; }
+    .stat-row:last-child { border-bottom: none; }
+    .stat-label { color: #888; }
+    .stat-value { color: #fff; font-weight: 500; }
+    .loading { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(10,10,15,0.95); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 9999; }
+    .spinner { width: 50px; height: 50px; border: 4px solid #2a2a3a; border-top-color: #4fc3f7; border-radius: 50%; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { margin-top: 20px; color: #888; text-align: center; max-width: 400px; line-height: 1.6; }
+    .status { padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 0.85rem; background: #1a3a2a; color: #8bc34a; display: none; }
+    .slider-group { margin-bottom: 16px; }
+    .slider-label { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.85rem; color: #aaa; }
+    .ri-stats { padding: 16px; background: #1a1a25; border-radius: 8px; margin-top: 16px; }
+    .ri-stat { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #2a2a3a; }
+    .ri-stat:last-child { border-bottom: none; }
+    .no-results { text-align: center; padding: 40px 20px; color: #666; }
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #0a0a0f; }
+    ::-webkit-scrollbar-thumb { background: #2a2a3a; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loadingText">Loading HURDAT2 data...</div>
+  </div>
+
+  <div class="app">
+    <div class="sidebar">
+      <div class="header">
+        <h1>🌀 Hurricane Explorer</h1>
+        <p>NOAA HURDAT2 Database</p>
+      </div>
+      
+      <div class="tabs">
+        <div class="tab active" data-tab="storms">Storm Tracks</div>
+        <div class="tab" data-tab="ri">Rapid Intensification</div>
+      </div>
+      
+      <div class="content" id="stormsTab">
+        <div class="status" id="status"></div>
+        
+        <div class="basin-toggle" id="basinToggle">
+          <button class="basin-btn active" data-basin="atlantic">Atlantic</button>
+          <button class="basin-btn" data-basin="pacific">E. Pacific</button>
+          <button class="basin-btn" data-basin="both">Both</button>
+        </div>
+        
+        <div class="search">
+          <input type="text" id="search" placeholder="🔍 Search by name (e.g., Katrina)">
+        </div>
+        
+        <div class="filters">
+          <select id="yearFilter"><option value="">All Years</option></select>
+          <select id="catFilter">
+            <option value="">All Categories</option>
+            <option value="5">Category 5</option>
+            <option value="4">Category 4+</option>
+            <option value="3">Category 3+</option>
+            <option value="2">Category 2+</option>
+            <option value="1">Category 1+</option>
+          </select>
+        </div>
+        
+        <div class="selected-panel" id="selectedPanel">
+          <div class="selected-header">
+            <span>Selected (<span id="count">0</span>)</span>
+            <button class="clear-btn" id="clearBtn">Clear All</button>
+          </div>
+          <div class="chips" id="chips"></div>
+        </div>
+        
+        <div class="storm-list" id="stormList"></div>
+        
+        <button class="btn btn-green" id="exportBtn">📷 Export Map as PNG</button>
+      </div>
+      
+      <div class="content" id="riTab" style="display:none">
+        <div class="slider-group">
+          <div class="slider-label"><span>Start Year</span><span id="startLabel">2000</span></div>
+          <input type="range" id="yearStart" min="1851" max="2024" value="2000" style="width:100%">
+        </div>
+        <div class="slider-group">
+          <div class="slider-label"><span>End Year</span><span id="endLabel">2024</span></div>
+          <input type="range" id="yearEnd" min="1851" max="2024" value="2024" style="width:100%">
+        </div>
+        
+        <div class="basin-toggle" id="riBasinToggle">
+          <button class="basin-btn active ri-basin" data-basin="atlantic">Atlantic</button>
+          <button class="basin-btn ri-basin" data-basin="pacific">E. Pacific</button>
+          <button class="basin-btn ri-basin" data-basin="both">Both</button>
+        </div>
+        
+        <button class="btn" id="showRiBtn">Show RI Events</button>
+        
+        <div class="ri-stats">
+          <div class="ri-stat"><span class="stat-label">RI Events</span><span class="stat-value" id="riCount">-</span></div>
+          <div class="ri-stat"><span class="stat-label">Storms with RI</span><span class="stat-value" id="riStorms">-</span></div>
+          <div class="ri-stat"><span class="stat-label">Max Increase</span><span class="stat-value" id="riMax">-</span></div>
+        </div>
+        
+        <p style="font-size:0.8rem;color:#666;margin-top:16px">RI = ≥30 kt increase in 24 hours</p>
+        
+        <button class="btn btn-green" id="exportRiBtn">📷 Export Map</button>
+      </div>
+    </div>
+    
+    <div class="map-area">
+      <div id="map"></div>
+      <div class="stats" id="stats">
+        <h3 id="statsTitle">Storm Statistics</h3>
+        <div id="statsContent"></div>
+      </div>
+      <div class="legend" id="legend">
+        <div class="legend-title">Storm Intensity</div>
+        <div class="legend-item"><div class="legend-color" style="background:#8bc34a"></div><span class="legend-label">TD (&lt;34 kt)</span></div>
+        <div class="legend-item"><div class="legend-color" style="background:#ffeb3b"></div><span class="legend-label">TS (34-63 kt)</span></div>
+        <div class="legend-item"><div class="legend-color" style="background:#ffc107"></div><span class="legend-label">Cat 1 (64-82 kt)</span></div>
+        <div class="legend-item"><div class="legend-color" style="background:#ff9800"></div><span class="legend-label">Cat 2 (83-95 kt)</span></div>
+        <div class="legend-item"><div class="legend-color" style="background:#ff5722"></div><span class="legend-label">Cat 3 (96-112 kt)</span></div>
+        <div class="legend-item"><div class="legend-color" style="background:#f44336"></div><span class="legend-label">Cat 4 (113-136 kt)</span></div>
+        <div class="legend-item"><div class="legend-color" style="background:#e91e63"></div><span class="legend-label">Cat 5 (≥137 kt)</span></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+let map, atlanticStorms = [], pacificStorms = [], allStorms = [];
+let selectedStorms = new Set(), trackLayers = [], riMarkers = [];
+let currentBasin = 'atlantic', riBasin = 'atlantic';
+
+const colors = { TD:'#8bc34a', TS:'#ffeb3b', SS:'#ffeb3b', '1':'#ffc107', '2':'#ff9800', '3':'#ff5722', '4':'#f44336', '5':'#e91e63', EX:'#9e9e9e' };
+const getCat = w => w >= 137 ? '5' : w >= 113 ? '4' : w >= 96 ? '3' : w >= 83 ? '2' : w >= 64 ? '1' : w >= 34 ? 'TS' : 'TD';
+const getCatLabel = c => ({ TD:'TD', TS:'TS', '1':'Cat 1', '2':'Cat 2', '3':'Cat 3', '4':'Cat 4', '5':'Cat 5' }[c] || c);
+
+function parseHURDAT2(text, basin) {
+  const lines = text.trim().split('\n'), storms = [];
+  let curr = null;
+  for (const line of lines) {
+    const p = line.split(',').map(s => s.trim());
+    if (p[0]?.match(/^(AL|EP|CP)\d{6}$/)) {
+      if (curr?.track.length) storms.push(curr);
+      curr = { id: p[0], name: p[1] || 'UNNAMED', basin, year: parseInt(p[0].slice(-4)), track: [], maxWind: 0, minPressure: 9999, peakCat: 'TD', landfalls: [] };
+    } else if (curr && p.length >= 7) {
+      let lat = parseFloat(p[4].replace(/[NS]/g, '')); if (p[4].includes('S')) lat = -lat;
+      let lon = parseFloat(p[5].replace(/[EW]/g, '')); if (p[5].includes('W')) lon = -lon;
+      const wind = parseInt(p[6]) || 0, pres = parseInt(p[7]) || -999;
+      if (!isNaN(lat) && !isNaN(lon)) {
+        const pt = { date: p[0], time: p[1], lat, lon, wind, pressure: pres, status: p[3], recordId: p[2], cat: getCat(wind) };
+        curr.track.push(pt);
+        if (wind > curr.maxWind) { curr.maxWind = wind; curr.peakCat = getCat(wind); }
+        if (pres > 0 && pres < curr.minPressure) curr.minPressure = pres;
+        if (p[2] === 'L') curr.landfalls.push(pt);
+      }
+    }
+  }
+  if (curr?.track.length) storms.push(curr);
+  return storms;
+}
+
+function initMap() {
+  map = L.map('map', { center: [25, -70], zoom: 4, minZoom: 2, maxZoom: 12 });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '© OpenStreetMap © CARTO', subdomains: 'abcd', maxZoom: 20
+  }).addTo(map);
+}
+
+function drawTrack(storm) {
+  const layers = [];
+  for (let i = 0; i < storm.track.length - 1; i++) {
+    const [p1, p2] = [storm.track[i], storm.track[i+1]];
+    const line = L.polyline([[p1.lat, p1.lon], [p2.lat, p2.lon]], { color: colors[p1.cat] || '#888', weight: 3, opacity: 0.8 });
+    line.addTo(map); layers.push(line);
+  }
+  storm.track.forEach((pt, i) => {
+    const isPeak = pt.wind === storm.maxWind && storm.maxWind >= 64;
+    const isKey = i === 0 || i === storm.track.length - 1 || isPeak || pt.recordId === 'L';
+    if (isKey) {
+      const m = L.circleMarker([pt.lat, pt.lon], { radius: isPeak ? 8 : pt.recordId === 'L' ? 7 : 5, color: '#fff', weight: 1, fillColor: colors[pt.cat], fillOpacity: 0.9 });
+      const d = pt.date ? `${pt.date.slice(0,4)}-${pt.date.slice(4,6)}-${pt.date.slice(6,8)}` : '';
+      m.bindPopup(`<b>${storm.name}</b> (${storm.year})<br>${d} ${pt.time}<br>Wind: ${pt.wind} kt<br>${pt.pressure > 0 ? 'Pressure: '+pt.pressure+' mb<br>' : ''}${getCatLabel(pt.cat)}${pt.recordId === 'L' ? '<br><b style="color:#f77">LANDFALL</b>' : ''}${isPeak ? '<br><b style="color:#4fc3f7">PEAK</b>' : ''}`);
+      m.addTo(map); layers.push(m);
+    }
+  });
+  return layers;
+}
+
+function clearTracks() { trackLayers.forEach(l => map.removeLayer(l)); trackLayers = []; }
+function clearRI() { riMarkers.forEach(m => map.removeLayer(m)); riMarkers = []; }
+
+function renderSelected() {
+  clearTracks(); clearRI();
+  selectedStorms.forEach(id => {
+    const s = allStorms.find(st => st.id === id);
+    if (s) trackLayers.push(...drawTrack(s));
+  });
+  if (selectedStorms.size) {
+    const bounds = [];
+    selectedStorms.forEach(id => { const s = allStorms.find(st => st.id === id); if (s) s.track.forEach(p => bounds.push([p.lat, p.lon])); });
+    if (bounds.length) map.fitBounds(bounds, { padding: [50, 50] });
+  }
+  updateStats();
+  resetLegend();
+}
+
+function updateStats() {
+  const panel = document.getElementById('stats');
+  if (!selectedStorms.size) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+  if (selectedStorms.size === 1) {
+    const s = allStorms.find(st => st.id === Array.from(selectedStorms)[0]);
+    document.getElementById('statsTitle').textContent = `${s.name} (${s.year})`;
+    let ace = 0;
+    s.track.forEach(p => { if (p.wind >= 34) ace += (p.wind * p.wind) / 10000; });
+    const start = new Date(`${s.track[0].date.slice(0,4)}-${s.track[0].date.slice(4,6)}-${s.track[0].date.slice(6,8)}`);
+    const end = new Date(`${s.track.at(-1).date.slice(0,4)}-${s.track.at(-1).date.slice(4,6)}-${s.track.at(-1).date.slice(6,8)}`);
+    const days = Math.ceil((end - start) / 86400000) + 1;
+    document.getElementById('statsContent').innerHTML = `
+      <div class="stat-row"><span class="stat-label">Peak</span><span class="stat-value">${getCatLabel(s.peakCat)}</span></div>
+      <div class="stat-row"><span class="stat-label">Max Wind</span><span class="stat-value">${s.maxWind} kt</span></div>
+      <div class="stat-row"><span class="stat-label">Min Pressure</span><span class="stat-value">${s.minPressure < 9999 ? s.minPressure + ' mb' : 'N/A'}</span></div>
+      <div class="stat-row"><span class="stat-label">Duration</span><span class="stat-value">${days} days</span></div>
+      <div class="stat-row"><span class="stat-label">ACE</span><span class="stat-value">${ace.toFixed(2)}</span></div>
+      <div class="stat-row"><span class="stat-label">Landfalls</span><span class="stat-value">${s.landfalls.length}</span></div>`;
+  } else {
+    document.getElementById('statsTitle').textContent = `${selectedStorms.size} Storms`;
+    const storms = Array.from(selectedStorms).map(id => allStorms.find(s => s.id === id));
+    document.getElementById('statsContent').innerHTML = `
+      <div class="stat-row"><span class="stat-label">Strongest</span><span class="stat-value">${Math.max(...storms.map(s => s.maxWind))} kt</span></div>
+      <div class="stat-row"><span class="stat-label">Years</span><span class="stat-value">${Math.min(...storms.map(s => s.year))} - ${Math.max(...storms.map(s => s.year))}</span></div>`;
+  }
+}
+
+function renderList(storms) {
+  const list = document.getElementById('stormList');
+  if (!storms.length) { list.innerHTML = '<div class="no-results">No storms found</div>'; return; }
+  list.innerHTML = storms.slice(0, 100).map(s => {
+    const cls = 'cat-' + (s.peakCat === 'TS' || s.peakCat === 'TD' ? s.peakCat.toLowerCase() : s.peakCat);
+    return `<div class="storm-item ${selectedStorms.has(s.id) ? 'selected' : ''}" data-id="${s.id}">
+      <div class="storm-header"><span class="storm-name">${s.name}</span><span class="storm-cat ${cls}">${getCatLabel(s.peakCat)}</span></div>
+      <div class="storm-meta">${s.year} · ${s.maxWind} kt · ${s.basin === 'atlantic' ? 'Atlantic' : 'E. Pacific'}</div>
+    </div>`;
+  }).join('') + (storms.length > 100 ? '<div class="no-results">Showing 100 of ' + storms.length + '</div>' : '');
+}
+
+function updateChips() {
+  const panel = document.getElementById('selectedPanel');
+  if (!selectedStorms.size) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+  document.getElementById('count').textContent = selectedStorms.size;
+  document.getElementById('chips').innerHTML = Array.from(selectedStorms).map(id => {
+    const s = allStorms.find(st => st.id === id);
+    return `<div class="chip"><span>${s.name} (${s.year})</span><span class="chip-x" data-id="${id}">×</span></div>`;
+  }).join('');
+}
+
+function getFiltered() {
+  const search = document.getElementById('search').value.toLowerCase();
+  const year = document.getElementById('yearFilter').value;
+  const cat = document.getElementById('catFilter').value;
+  let storms = currentBasin === 'atlantic' ? atlanticStorms : currentBasin === 'pacific' ? pacificStorms : allStorms;
+  if (search) storms = storms.filter(s => s.name.toLowerCase().includes(search));
+  if (year) storms = storms.filter(s => s.year === parseInt(year));
+  if (cat) {
+    const order = ['TD', 'TS', '1', '2', '3', '4', '5'];
+    storms = storms.filter(s => order.indexOf(s.peakCat) >= order.indexOf(cat));
+  }
+  return storms.sort((a, b) => b.year - a.year || b.maxWind - a.maxWind);
+}
+
+function findRI(startY, endY, basin) {
+  let storms = basin === 'atlantic' ? atlanticStorms : basin === 'pacific' ? pacificStorms : allStorms;
+  storms = storms.filter(s => s.year >= startY && s.year <= endY);
+  const events = [];
+  storms.forEach(storm => {
+    for (let i = 0; i < storm.track.length; i++) {
+      const p1 = storm.track[i];
+      for (let j = i + 1; j < Math.min(i + 6, storm.track.length); j++) {
+        const p2 = storm.track[j];
+        const d1 = new Date(`${p1.date.slice(0,4)}-${p1.date.slice(4,6)}-${p1.date.slice(6,8)}T${p1.time.slice(0,2)}:${p1.time.slice(2,4)||'00'}:00Z`);
+        const d2 = new Date(`${p2.date.slice(0,4)}-${p2.date.slice(4,6)}-${p2.date.slice(6,8)}T${p2.time.slice(0,2)}:${p2.time.slice(2,4)||'00'}:00Z`);
+        const hrs = (d2 - d1) / 3600000;
+        if (hrs >= 18 && hrs <= 30 && p2.wind - p1.wind >= 30) {
+          events.push({ storm, p1, p2, increase: p2.wind - p1.wind, hrs, lat: (p1.lat + p2.lat) / 2, lon: (p1.lon + p2.lon) / 2 });
+          i = j; break;
+        }
+      }
+    }
+  });
+  return events;
+}
+
+function showRI() {
+  clearTracks(); clearRI();
+  const startY = parseInt(document.getElementById('yearStart').value);
+  const endY = parseInt(document.getElementById('yearEnd').value);
+  const events = findRI(startY, endY, riBasin);
+  const unique = new Set(events.map(e => e.storm.id));
+  const maxInc = events.length ? Math.max(...events.map(e => e.increase)) : 0;
+  document.getElementById('riCount').textContent = events.length;
+  document.getElementById('riStorms').textContent = unique.size;
+  document.getElementById('riMax').textContent = maxInc ? `+${maxInc} kt` : '-';
+  events.forEach(e => {
+    const m = L.circleMarker([e.lat, e.lon], { radius: 6, color: '#fff', weight: 1, fillColor: '#e91e63', fillOpacity: 0.8 });
+    m.bindPopup(`<b>${e.storm.name}</b> (${e.storm.year})<br>+${e.increase} kt in ${Math.round(e.hrs)}h<br>${e.p1.wind} → ${e.p2.wind} kt`);
+    m.addTo(map); riMarkers.push(m);
+  });
+  document.getElementById('legend').innerHTML = `<div class="legend-title">Rapid Intensification</div><div class="legend-item"><div class="legend-color" style="background:#e91e63;width:12px;height:12px;border-radius:50%"></div><span class="legend-label">RI Event (≥30 kt/24h)</span></div><div style="margin-top:8px;font-size:0.75rem;color:#888">${startY}-${endY} · ${riBasin === 'both' ? 'All Basins' : riBasin === 'atlantic' ? 'Atlantic' : 'E. Pacific'}</div>`;
+  if (events.length) map.fitBounds(events.map(e => [e.lat, e.lon]), { padding: [50, 50] });
+  document.getElementById('stats').style.display = 'none';
+}
+
+function resetLegend() {
+  document.getElementById('legend').innerHTML = `<div class="legend-title">Storm Intensity</div><div class="legend-item"><div class="legend-color" style="background:#8bc34a"></div><span class="legend-label">TD (&lt;34 kt)</span></div><div class="legend-item"><div class="legend-color" style="background:#ffeb3b"></div><span class="legend-label">TS (34-63 kt)</span></div><div class="legend-item"><div class="legend-color" style="background:#ffc107"></div><span class="legend-label">Cat 1 (64-82 kt)</span></div><div class="legend-item"><div class="legend-color" style="background:#ff9800"></div><span class="legend-label">Cat 2 (83-95 kt)</span></div><div class="legend-item"><div class="legend-color" style="background:#ff5722"></div><span class="legend-label">Cat 3 (96-112 kt)</span></div><div class="legend-item"><div class="legend-color" style="background:#f44336"></div><span class="legend-label">Cat 4 (113-136 kt)</span></div><div class="legend-item"><div class="legend-color" style="background:#e91e63"></div><span class="legend-label">Cat 5 (≥137 kt)</span></div>`;
+}
+
+async function exportMap() {
+  try {
+    const canvas = await html2canvas(document.getElementById('map'), { useCORS: true, backgroundColor: '#0a1929' });
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, canvas.height - 25, canvas.width, 25);
+    ctx.fillStyle = '#fff'; ctx.font = '11px sans-serif';
+    ctx.fillText('Data: NOAA HURDAT2 | Map: CartoDB', 10, canvas.height - 8);
+    const a = document.createElement('a');
+    a.download = `hurricane-map-${new Date().toISOString().split('T')[0]}.png`;
+    a.href = canvas.toDataURL('image/png'); a.click();
+  } catch (e) { alert('Export failed - try browser screenshot'); }
+}
+
+async function init() {
+  try {
+    initMap();
+    document.getElementById('loadingText').textContent = 'Loading Atlantic data...';
+    const atlText = await fetch('./hurdat2-atlantic.txt').then(r => { if (!r.ok) throw new Error('Atlantic file not found'); return r.text(); });
+    atlanticStorms = parseHURDAT2(atlText, 'atlantic');
+    
+    document.getElementById('loadingText').textContent = 'Loading Pacific data...';
+    const pacText = await fetch('./hurdat2-pacific.txt').then(r => { if (!r.ok) throw new Error('Pacific file not found'); return r.text(); });
+    pacificStorms = parseHURDAT2(pacText, 'pacific');
+    
+    allStorms = [...atlanticStorms, ...pacificStorms];
+    console.log(`Loaded ${atlanticStorms.length} Atlantic + ${pacificStorms.length} Pacific storms`);
+    
+    const status = document.getElementById('status');
+    status.style.display = 'block';
+    status.textContent = `✓ ${atlanticStorms.length} Atlantic + ${pacificStorms.length} Pacific storms`;
+    
+    const yf = document.getElementById('yearFilter');
+    [...new Set(allStorms.map(s => s.year))].sort((a,b) => b - a).forEach(y => {
+      const o = document.createElement('option'); o.value = y; o.textContent = y; yf.appendChild(o);
+    });
+    
+    renderList(getFiltered());
+    document.getElementById('loading').style.display = 'none';
+  } catch (e) {
+    console.error(e);
+    document.getElementById('loadingText').innerHTML = `<b>Failed to load data</b><br><br>Ensure these files exist:<br>• hurdat2-atlantic.txt<br>• hurdat2-pacific.txt<br><br><span style="color:#f77">${e.message}</span><br><br><small>Run via local server:<br><code style="background:#222;padding:4px 8px;border-radius:4px">python -m http.server 8000</code></small>`;
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  init();
+  
+  document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    const tab = t.dataset.tab;
+    document.getElementById('stormsTab').style.display = tab === 'storms' ? 'block' : 'none';
+    document.getElementById('riTab').style.display = tab === 'ri' ? 'block' : 'none';
+    if (tab === 'storms') { clearRI(); renderSelected(); }
+  }));
+  
+  document.querySelectorAll('#basinToggle .basin-btn').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('#basinToggle .basin-btn').forEach(x => x.classList.remove('active'));
+    b.classList.add('active'); currentBasin = b.dataset.basin; renderList(getFiltered());
+  }));
+  
+  document.querySelectorAll('.ri-basin').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('.ri-basin').forEach(x => x.classList.remove('active'));
+    b.classList.add('active'); riBasin = b.dataset.basin;
+  }));
+  
+  document.getElementById('search').addEventListener('input', () => renderList(getFiltered()));
+  document.getElementById('yearFilter').addEventListener('change', () => renderList(getFiltered()));
+  document.getElementById('catFilter').addEventListener('change', () => renderList(getFiltered()));
+  
+  document.getElementById('stormList').addEventListener('click', e => {
+    const item = e.target.closest('.storm-item');
+    if (item) {
+      const id = item.dataset.id;
+      selectedStorms.has(id) ? selectedStorms.delete(id) : selectedStorms.add(id);
+      renderList(getFiltered()); updateChips(); renderSelected();
+    }
+  });
+  
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    selectedStorms.clear(); renderList(getFiltered()); updateChips(); clearTracks();
+    document.getElementById('stats').style.display = 'none';
+  });
+  
+  document.getElementById('chips').addEventListener('click', e => {
+    if (e.target.classList.contains('chip-x')) {
+      selectedStorms.delete(e.target.dataset.id);
+      renderList(getFiltered()); updateChips(); renderSelected();
+    }
+  });
+  
+  document.getElementById('yearStart').addEventListener('input', e => {
+    document.getElementById('startLabel').textContent = e.target.value;
+    if (+e.target.value > +document.getElementById('yearEnd').value) {
+      document.getElementById('yearEnd').value = e.target.value;
+      document.getElementById('endLabel').textContent = e.target.value;
+    }
+  });
+  
+  document.getElementById('yearEnd').addEventListener('input', e => {
+    document.getElementById('endLabel').textContent = e.target.value;
+    if (+e.target.value < +document.getElementById('yearStart').value) {
+      document.getElementById('yearStart').value = e.target.value;
+      document.getElementById('startLabel').textContent = e.target.value;
+    }
+  });
+  
+  document.getElementById('showRiBtn').addEventListener('click', showRI);
+  document.getElementById('exportBtn').addEventListener('click', exportMap);
+  document.getElementById('exportRiBtn').addEventListener('click', exportMap);
+});
+</script>
+</body>
+</html>
